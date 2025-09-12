@@ -31,9 +31,9 @@ async def get_own_ip_async():
 async def chk(update, context):
     text = update.message.text
     processing_msg = await update.message.reply_text(
-    "Processing ⚙️...",
-    reply_to_message_id=update.message.message_id
-)
+        "Processing ⚙️...",
+        reply_to_message_id=update.message.message_id
+    )
     match = re.match(r'^\.?\/?chk\s+(.+)', text, re.IGNORECASE)
     if not match:
         await processing_msg.delete()
@@ -43,7 +43,6 @@ async def chk(update, context):
             "Expiration must be in MM|YY or MM|YYYY format."
         )
         return
-
     rest = match.group(1).strip()
     fields = re.split(r'\s*\|\s*', rest)
     if len(fields) != 4:
@@ -54,7 +53,6 @@ async def chk(update, context):
             "Expiration must be in MM|YY or MM|YYYY format."
         )
         return
-
     card_number, exp_month, exp_year, cvc = fields
     card_data = f"{card_number}|{exp_month}|{exp_year}|{cvc}"
     from main import load_current_site
@@ -63,14 +61,10 @@ async def chk(update, context):
     uuids = generate_uuids()
     chat_id = update.message.chat_id
     bot_token = TELEGRAM_BOT_TOKEN
-
     await asyncio.sleep(1)  # Delay to reduce rapid repeated checks
-
     import proxy
     proxy_for_card = proxy.get_next_proxy()
-
     print("Proxy for card:", proxy_for_card)  # Debug: print proxy used
-
     proxy_ip = "N/A"
     if proxy_for_card:
         proxy_url = proxy_for_card.get("http") or proxy_for_card.get("https")
@@ -79,17 +73,60 @@ async def chk(update, context):
     else:
         own_ip = await get_own_ip_async()
         proxy_ip = f"{own_ip} (Own)"
-    status, msg, raw = await asyncio.get_running_loop().run_in_executor(
-        None,
-        check_card_across_sites,
-        card_data,
-        headers,
-        uuids,
-        chat_id,
-        bot_token,
-        sites,
-        proxy_for_card,
-    )
+
+    try:
+        status, msg, raw = await asyncio.get_running_loop().run_in_executor(
+            None,
+            check_card_across_sites,
+            card_data,
+            headers,
+            uuids,
+            chat_id,
+            bot_token,
+            sites,
+            proxy_for_card,
+        )
+    except Exception as e:
+        print(f"Proxy failed: {e}, retrying without proxy")
+        status, msg, raw = await asyncio.get_running_loop().run_in_executor(
+            None,
+            check_card_across_sites,
+            card_data,
+            headers,
+            uuids,
+            chat_id,
+            bot_token,
+            sites,
+            None,
+        )
+        # Set proxy_ip to your actual server IP after fallback
+        own_ip = await get_own_ip_async()
+        proxy_ip = f"{own_ip} (Own)"
+    # Detect proxy failure messages and retry without proxy
+    proxy_failure_indicators = [
+        "unable to connect",
+        "proxy error",
+        "proxyconnectionfailed",
+        "proxyconnect",
+        "connection refused",
+        "connection timed out",
+        "proxy refused",
+        "proxy failed",
+    ]
+
+    if any(indicator in msg.lower() for indicator in proxy_failure_indicators):
+        print("Detected proxy failure in message, retrying without proxy")
+        status, msg, raw = await asyncio.get_running_loop().run_in_executor(
+            None,
+            check_card_across_sites,
+            card_data,
+            headers,
+            uuids,
+            chat_id,
+            bot_token,
+            sites,
+            None,
+        )
 
     await processing_msg.delete()
     site_num = ""
@@ -110,6 +147,7 @@ async def chk(update, context):
         "DECLINED": "Declined",
         "INVALID_FORMAT": "Invalid Format",
     }
+
     if status in ["APPROVED", "CVV", "CCN", "LOW_FUNDS"]:
         status_emoji = "✅"
     else:
@@ -128,7 +166,7 @@ async def chk(update, context):
     )
 
     await update.message.reply_text(
-    final_msg, 
-    parse_mode="HTML", 
-    reply_to_message_id=update.message.message_id
-)
+        final_msg,
+        parse_mode="HTML",
+        reply_to_message_id=update.message.message_id
+    )
