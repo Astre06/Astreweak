@@ -271,7 +271,9 @@ async def handle_file(update, context):
             pass
 
         try:
-            os.remove(outputfile)
-        except Exception:
-            pass
+            os.remove(output_file)
+        except Exception as e:
+            print(f"Error deleting results file: {e}")
+
+
 
