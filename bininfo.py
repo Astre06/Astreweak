@@ -1,8 +1,15 @@
 import requests
 import re
 
-BIN_LOOKUP_SERVICES = [
-    {
+_cache = {}
+
+def bin_lookup(card_number: str, proxy=None, timeout_seconds=10):
+    bin_number = card_number[:6]
+    if bin_number in _cache:
+        print(f"Cache hit for BIN {bin_number}: {_cache[bin_number]}")
+        return _cache[bin_number]
+
+    service = {
         "name": "antipublic_bins",
         "url": "https://bins.antipublic.cc/bins/",
         "headers": {},
@@ -16,18 +23,7 @@ BIN_LOOKUP_SERVICES = [
             data.get("bank", "Unknown Bank"),
             data.get("country_name", "Unknown Country"),
         ),
-    },
-]
-
-_cache = {}
-
-def round_robin_bin_lookup(card_number: str, proxy=None, timeout_seconds=10):
-    bin_number = card_number[:6]
-    if bin_number in _cache:
-        print(f"Cache hit for BIN {bin_number}: {_cache[bin_number]}")
-        return _cache[bin_number]
-
-    service = BIN_LOOKUP_SERVICES[0]
+    }
 
     try:
         headers = service.get("headers", {}).copy()
@@ -52,7 +48,11 @@ def round_robin_bin_lookup(card_number: str, proxy=None, timeout_seconds=10):
             scheme, card_type, level, bank, country = service["parse"](data)
             country_clean = re.sub(r"\s*\(.*?\)", "", country).strip()
             result = (f"{bin_number} - {level} - {card_type} - {scheme}", bank, country_clean)
-            _cache[bin_number] = result
+            
+            # Cache only if info is not Unknown
+            if "Unknown" not in result:
+                _cache[bin_number] = result
+                
             return result
         else:
             print(f"Error response from {service['name']}: HTTP {resp.status_code}")
@@ -62,5 +62,4 @@ def round_robin_bin_lookup(card_number: str, proxy=None, timeout_seconds=10):
 
     default_result = (f"{bin_number} - Unknown", "Unknown Bank", "Unknown Country")
     print(f"BIN lookup failed for {bin_number}. Returning unknown result.")
-    _cache[bin_number] = default_result
     return default_result
