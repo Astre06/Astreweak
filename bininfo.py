@@ -6,7 +6,7 @@ BIN_CACHE = {}
 
 BIN_LOOKUP_SERVICES = [
     {
-        "name": "antipublic",
+        "name": "binlist",
         "url": "https://bins.antipublic.cc/bins/",
         "headers": {"Accept-Version": "3", "User-Agent": "Mozilla/5.0"},
         "params": {},
@@ -72,6 +72,7 @@ def round_robin_bin_lookup(card_number: str, proxy=None):
     result = (f"{bin_number} - ERROR", "Unknown Bank", "Unknown Country")
     BIN_CACHE[bin_number] = result
     return result
+
 
 
 
