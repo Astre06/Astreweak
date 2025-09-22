@@ -1,78 +1,66 @@
 import requests
 import re
-import threading
-
-BIN_CACHE = {}
 
 BIN_LOOKUP_SERVICES = [
     {
-        "name": "binlist",
+        "name": "antipublic_bins",
         "url": "https://bins.antipublic.cc/bins/",
-        "headers": {"Accept-Version": "3", "User-Agent": "Mozilla/5.0"},
+        "headers": {},
         "params": {},
         "api_key": False,
+        "post": False,
         "parse": lambda data: (
-            data.get("scheme", "N/A").upper(),
-            data.get("type", "N/A").upper(),
-            data.get("brand", "STANDARD").upper(),
-            data.get("bank", {}).get("name", "Unknown Bank"),
-            data.get("country", {}).get("name", "Unknown Country"),
+            data.get("brand", "Unknown").upper(),
+            data.get("type", "Unknown").upper(),
+            "STANDARD",
+            data.get("bank", "Unknown Bank"),
+            data.get("country_name", "Unknown Country"),
         ),
     },
-    
 ]
 
-_service_index_lock = threading.Lock()
-_service_index = 0
+_cache = {}
 
-def round_robin_bin_lookup(card_number: str, proxy=None):
-    global _service_index
+def round_robin_bin_lookup(card_number: str, proxy=None, timeout_seconds=10):
     bin_number = card_number[:6]
+    if bin_number in _cache:
+        print(f"Cache hit for BIN {bin_number}: {_cache[bin_number]}")
+        return _cache[bin_number]
 
-    if bin_number in BIN_CACHE:
-        return BIN_CACHE[bin_number]
+    service = BIN_LOOKUP_SERVICES[0]
 
-    num_services = len(BIN_LOOKUP_SERVICES)
-    attempts = 0
+    try:
+        headers = service.get("headers", {}).copy()
+        params = {}
+        url = service["url"]
+        auth = service.get("auth")
 
-    while attempts < num_services:
-        with _service_index_lock:
-            service = BIN_LOOKUP_SERVICES[_service_index]
-            _service_index = (_service_index + 1) % num_services
-        try:
-            headers = service.get("headers", {}).copy()
-            params = {}
-            url = service["url"]
-            auth = service.get("auth")
+        if service.get("post", False):
+            params = service.get("auth", {}).copy()
+            params["bin"] = bin_number
+            resp = requests.post(url, headers=headers, data=params, proxies=proxy, timeout=timeout_seconds)
+        else:
+            if not url.endswith("/"):
+                url += "/"
+            url += bin_number
+            if auth:
+                headers.update(auth)
+            resp = requests.get(url, headers=headers, params=params, proxies=proxy, timeout=timeout_seconds)
 
-            if service.get("post", False):
-                # POST request with auth data for some services
-                params = service.get("auth", {}).copy()
-                params["bin"] = bin_number
-                resp = requests.post(url, headers=headers, data=params, proxies=proxy, timeout=15)
-            else:
-                if not url.endswith("/"):
-                    url += "/"
-                url += bin_number
-                if auth:
-                    headers.update(auth)
-                resp = requests.get(url, headers=headers, params=params, proxies=proxy, timeout=15)
+        if resp.status_code == 200:
+            data = resp.json()
+            scheme, card_type, level, bank, country = service["parse"](data)
+            country_clean = re.sub(r"\s*\(.*?\)", "", country).strip()
+            result = (f"{bin_number} - {level} - {card_type} - {scheme}", bank, country_clean)
+            _cache[bin_number] = result
+            return result
+        else:
+            print(f"Error response from {service['name']}: HTTP {resp.status_code}")
 
-            if resp.status_code == 200:
-                data = resp.json()
-                scheme, card_type, level, bank, country = service["parse"](data)
-                country_clean = re.sub(r"\s*\(.*?\)", "", country).strip()
-                result = (f"{bin_number} - {level} - {card_type} - {scheme}", bank, country_clean)
-                BIN_CACHE[bin_number] = result
-                return result
-        except Exception:
-            attempts += 1
-            continue
+    except Exception as e:
+        print(f"Exception during request to {service['name']}: {e}")
 
-    result = (f"{bin_number} - ERROR", "Unknown Bank", "Unknown Country")
-    BIN_CACHE[bin_number] = result
-    return result
-
-
-
-
+    default_result = (f"{bin_number} - Unknown", "Unknown Bank", "Unknown Country")
+    print(f"BIN lookup failed for {bin_number}. Returning unknown result.")
+    _cache[bin_number] = default_result
+    return default_result
