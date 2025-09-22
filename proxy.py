@@ -1,16 +1,38 @@
 import os
 import threading
+import requests
 
 PROXY_FILE = "notepad.txt"
+PROXYSCRAPE_API_KEY = "eae95fjgp5edny7jemyz"  # Your ProxyScrape premium API key
+
 _proxy_lock = threading.Lock()
 _proxy_list = []
 _proxy_index = 0
 
+def fetch_premium_proxies():
+    url = (
+        f"https://api.proxyscrape.com/v2/account/datacenter_shared/proxy-list"
+        f"?auth={PROXYSCRAPE_API_KEY}&type=getproxies&country[]=all&protocol=http&format=normal"
+    )
+    response = requests.get(url)
+    if response.status_code == 200:
+        proxies = response.text.strip().split('\n')
+        return proxies
+    else:
+        print(f"Failed to fetch proxy list: {response.text}")
+        return []
+
 def load_proxies():
     global _proxy_list
-    if not os.path.exists(PROXY_FILE):
-        _proxy_list = []
-        return _proxy_list
+    # If file missing or empty: fetch proxies from ProxyScrape API
+    if not os.path.exists(PROXY_FILE) or os.path.getsize(PROXY_FILE) == 0:
+        proxies = fetch_premium_proxies()
+        if proxies:
+            save_proxies(proxies)
+        else:
+            _proxy_list = []
+            return _proxy_list
+
     with _proxy_lock:
         with open(PROXY_FILE, "r") as f:
             lines = f.readlines()
@@ -23,23 +45,26 @@ def load_proxies():
             if len(parts) == 4:
                 ip, port, user, pwd = parts
                 proxy_url = f"http://{user}:{pwd}@{ip}:{port}"
-                proxies.append({
-                    "http": proxy_url,
-                    "https": proxy_url,
-                })
+            elif len(parts) == 2:
+                ip, port = parts
+                proxy_url = f"http://{ip}:{port}"
+            else:
+                continue
+            proxies.append({
+                "http": proxy_url,
+                "https": proxy_url,
+            })
         _proxy_list = proxies
     return _proxy_list
 
 def save_proxies(proxy_lines):
-    # proxy_lines: list of strings like "IP:PORT:USER:PASS"
     with _proxy_lock:
         with open(PROXY_FILE, "w") as f:
             for line in proxy_lines:
                 f.write(line.strip() + "\n")
-    load_proxies()  # refresh proxy list after saving
+    load_proxies()
 
 def add_proxies(proxy_lines):
-    # Add proxies (strings) to existing file without duplication
     current = set()
     with _proxy_lock:
         if os.path.exists(PROXY_FILE):
