@@ -271,6 +271,7 @@ async def handle_file(update, context):
             pass
 
         try:
-            os.remove(temp_path)
+            os.remove(outputfile)
         except Exception:
             pass
+
