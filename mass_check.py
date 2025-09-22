@@ -270,10 +270,16 @@ async def handle_file(update, context):
         except Exception:
             pass
 
-        try:
-            os.remove(output_file)
-        except Exception as e:
-            print(f"Error deleting results file: {e}")
+        files_to_delete = [temp_path, output_file]
+        for file_path in files_to_delete:
+            if os.path.basename(file_path) == "proxy.txt":
+                continue  # skip deleting proxy.txt
+            try:
+                if os.path.exists(file_path):
+                    os.remove(file_path)
+                    print(f"Deleted temporary file: {file_path}")
+            except Exception as e:
+                print(f"Failed to delete {file_path}: {e}")
 
 
 
